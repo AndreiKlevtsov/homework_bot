@@ -43,11 +43,10 @@ def send_message(bot, message) -> None:
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(f'Отправлено сообщение: {message}.')
-    except Exception as error:
+    except telegram.error.TelegramError as error:
         message = f'Ошибка при отправке сообщения: {error}.'
         logging.error(message)
         raise SendMessageError(message)
-    return
 
 
 def get_api_answer(timestamp: int) -> Dict[str, any]:
@@ -106,12 +105,16 @@ def main():
         logging.critical(message)
         sys.exit(message)
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
+    timestamp = int(time.time()) - 1000000
     current_review = {
         'hw_name': '',
         'hw_status': '',
     }
     previous_review = current_review.copy()
+    cache_msg = {
+        'sent_msg': '',
+        'errors': '',
+    }
     while True:
         try:
             response = get_api_answer(timestamp)
@@ -121,18 +124,25 @@ def main():
                 current_review['hw_name'] = homework.get('homework_name')
                 current_review['hw_status'] = homework.get('status')
                 message = parse_status(homework)
-                send_message(bot, message)
-            else:
-                current_review['hw_status'] = 'Нет обновлений статуса'
+                if cache_msg['sent_msg'] != message:
+                    send_message(bot, message)
+                    cache_msg['sent_msg'] = message
+                else:
+                    current_review['hw_status'] = 'Нет обновлений статуса'
             if current_review != previous_review:
                 logging.debug(
-                    f'Текущий статус : {current_review["hw_status"]}'
+                    f'Текущий статус: {current_review["hw_status"]}'
                 )
                 previous_review = current_review.copy()
+        except SendMessageError as error:
+            message = f'Ошибка при отправке сообщения: {error}.'
+            logging.exception(message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}.'
             logging.exception(message)
-            send_message(bot, message)
+            if cache_msg['errors'] != message:
+                send_message(bot, message)
+                cache_msg['errors'] = message
         finally:
             time.sleep(RETRY_PERIOD)
 
@@ -140,12 +150,12 @@ def main():
 if __name__ == '__main__':
     logging.basicConfig(
         level=logging.DEBUG,
-        filename='log.txt',
-        filemode='w',
         format='%(asctime)s, %(levelname)s,'
                ' %(message)s, %(name)s, %(funcName)s,'
                ' %(lineno)d, %(message)s',
-    ),
-    handler = logging.StreamHandler(sys.stdout)
-    logging.getLogger('').addHandler(handler)
+        handlers=[
+            logging.FileHandler("log.txt", mode='w'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
     main()
