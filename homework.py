@@ -105,12 +105,12 @@ def main():
         logging.critical(message)
         sys.exit(message)
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time()) - 1000000
+    timestamp = int(time.time())
     current_review = {
         'hw_name': '',
         'hw_status': '',
     }
-    previous_review = current_review.copy()
+
     cache_msg = {
         'sent_msg': '',
         'errors': '',
@@ -121,28 +121,29 @@ def main():
             new_homework = check_response(response)
             if new_homework:
                 homework = new_homework[0]
-                current_review['hw_name'] = homework.get('homework_name')
+                current_review['hw_name'] = homework.get('lesson_name')
                 current_review['hw_status'] = homework.get('status')
                 message = parse_status(homework)
                 if cache_msg['sent_msg'] != message:
                     send_message(bot, message)
                     cache_msg['sent_msg'] = message
                 else:
-                    current_review['hw_status'] = 'Нет обновлений статуса'
-            if current_review != previous_review:
-                logging.debug(
-                    f'Текущий статус: {current_review["hw_status"]}'
-                )
-                previous_review = current_review.copy()
-        except SendMessageError as error:
-            message = f'Ошибка при отправке сообщения: {error}.'
-            logging.exception(message)
+                    current_review['hw_status'] = 'Статус не обновлялся'
+                    logging.debug(
+                        f'{current_review["hw_name"]} - '
+                        f'{current_review["hw_status"]}'
+                    )
+
         except Exception as error:
             message = f'Сбой в работе программы: {error}.'
             logging.exception(message)
             if cache_msg['errors'] != message:
-                send_message(bot, message)
-                cache_msg['errors'] = message
+                try:
+                    send_message(bot, message)
+                except SendMessageError:
+                    pass
+                else:
+                    cache_msg['errors'] = message
         finally:
             time.sleep(RETRY_PERIOD)
 
